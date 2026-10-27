@@ -1,4 +1,4 @@
-<div align="center">
+<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/11aa727e-4a72-4828-af50-1a4aaa68c0f7" /><div align="center">
 
 # 🛡️ OSIP-DEFEND
 
@@ -42,6 +42,9 @@
 | **Настройки** | Профили проверки, исключения, параметры мониторинга, лимиты Open-CWS, оформление и размер журнала. |
 
 ### Интерфейс
+<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/9eca1940-49d1-4ce3-8b49-dd57cb88e959" />
+<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/ff391a46-88d0-4bdc-a714-3d48ca37059f" />
+
 
 - Тёмная палитра с зелёным акцентом.
 - Боковая навигация и встроенные векторные иконки.
