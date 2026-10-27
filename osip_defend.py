@@ -1,30 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-r"""OSIP-DEFEND 3.0 — локальный сканер, мониторинг, твикер, два внешних движка и настройки.
-Python 3.10+. Установка: py -m pip install PySide6 watchdog psutil
-Запуск: py osip_defend.py
-Тестовые сигнатуры срабатывают ТОЛЬКО на точное содержимое TEST_SAMPLES.
-Проверка движка без GUI: py osip_defend.py --self-test
-Создать безвредные образцы: py osip_defend.py --create-demo ПАПКА
-Журнал и резервные копии реестра: %LOCALAPPDATA%\OSIP-DEFEND.
-Внешние движки не входят в Python-файл. Microsoft Defender берётся из Windows.
-Open-CWS: установите отдельно из доверенного источника; укажите bin/MSScmd.exe и bin/db.
-Современный clamscan.exe также поддерживается. Open-CWS больше не поддерживается.
-Первый запуск CWS требует явного доверия пакету в настройках: сохраняется SHA-256 EXE.
-Код/бинарники Open-CWS не копируются; имена, лицензия GPL-2.0 и источник указаны в сведениях.
-Настройки: settings.json в локальном каталоге приложения; не хранят секретов.
-Проверены GUI, локальный движок и CLI-адаптеры с безопасными тестовыми процессами в Linux.
-Реальные внешние Windows-движки и их совместимость здесь не исполнялись.
-Все функции версии 1 сохранены. Дополнительно запускается УСТАНОВЛЕННЫЙ Microsoft Defender.
-Антивирусный движок Microsoft не распространяется внутри этого Python-файла.
-MpCmdRun: custom scan, -DisableRemediation. Настройки фоновой защиты не меняются.
-Код 2 НЕ означает однозначно вирус: возможна ошибка сканирования; читайте вывод.
-Прекращение ожидания завершает только наш CLI; остановка сканирования службы не гарантируется.
-Defender использует свои сетевые/облачные политики; кнопка обновления требует доступа к источнику обновлений.
-Реестр, Windows API и реальный Defender здесь не тестировались; GUI и локальный движок — в Linux.
-Документация: https://learn.microsoft.com/en-us/defender-endpoint/command-line-arguments-microsoft-defender-antivirus
-Без автоматического повышения прав и отключения Defender.
-"""
+
 from __future__ import annotations
 
 import argparse
@@ -52,18 +28,12 @@ IS_WINDOWS = sys.platform == 'win32'
 if IS_WINDOWS:
     import winreg
 
-# Это не база настоящих вирусов: воспроизводимые безопасные тестовые образцы.
 TEST_SAMPLES = {f'OSIP.Demo.{i:02d}': f'OSIP-DEFEND harmless test sample {i:02d}\n'.encode()
                 for i in range(1, 9)}
 SIGNATURES = {hashlib.sha256(data).hexdigest(): name for name, data in TEST_SAMPLES.items()}
 GREEN, RED, MUTED = '#00ff41', '#ff5874', '#a1adbd'
 MAX_LOGS = 2000
 
-
-# Независимая CLI-интеграция: код/бинарники Open-CWS не включены и не переименовываются.
-# Open-CWS: https://github.com/mrkaban/Open-CWS-Anti-virus — GPL-2.0, проект не поддерживается.
-# Совместимость CLI проверена по batch_scripts/Sscan1.bat и engine/clamscan/clamscan.c.
-# В отличие от скриптов проекта НЕ используем --kill, --unload, --move и --remove.
 CWS_PROJECT = 'https://github.com/mrkaban/Open-CWS-Anti-virus'
 DEFAULT_SETTINGS = {
     'default_folder': str(Path.home() / 'Downloads'), 'engine_mode': 'both',
@@ -216,7 +186,6 @@ def heuristic(path, info, days=3):
     p = Path(path)
     if p.suffix.lower() not in ('.exe', '.dll'):
         return ''
-    # В Windows st_ctime — время создания; на других ОС используется только для теста.
     recent = 0 <= time.time() - info.st_ctime < days * 86400
     parts = {part.lower() for part in p.parts}
     temp = bool(parts & {'temp', 'tmp'})
@@ -239,7 +208,6 @@ class Finding:
 
 
 def delete_verified(finding):
-    """Удаление того же открытого файла, без гонки close/hash/unlink в Windows."""
     if not IS_WINDOWS:
         raise OSError('Удаление поддерживается только в Windows')
     if finding.kind != 'test' or finding.sha256 not in SIGNATURES:
@@ -268,7 +236,6 @@ def delete_verified(finding):
                     ('index_high', wintypes.DWORD), ('index_low', wintypes.DWORD)]
     class Disposition(ctypes.Structure):
         _fields_ = [('delete', wintypes.BOOL)]
-    # Не разрешаем другим открывать файл на запись/удаление до закрытия handle.
     handle = create(os.path.abspath(finding.path), 0x80000000 | 0x10000, 1, None,
                     3, 0x00200000 | 0x08000000, None)
     if handle == ctypes.c_void_p(-1).value:
@@ -280,7 +247,7 @@ def delete_verified(finding):
         if info.attributes & (0x400 | 0x10) or info.links > 1:
             raise OSError('Ссылка, каталог или файл с hard link: удаление запрещено')
         fd = msvcrt.open_osfhandle(int(handle), os.O_RDONLY | os.O_BINARY)
-        handle = None  # fd теперь владеет Windows handle.
+        handle = None
         with os.fdopen(fd, 'rb') as stream:
             digest = hashlib.sha256()
             for chunk in iter(lambda: stream.read(1024 * 1024), b''):
@@ -328,7 +295,7 @@ def self_test():
 
 
 def command_line():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser()
     parser.add_argument('--self-test', action='store_true')
     parser.add_argument('--create-demo', metavar='FOLDER')
     args = parser.parse_args()
@@ -339,7 +306,6 @@ def command_line():
         folder = Path(args.create_demo)
         folder.mkdir(parents=True, exist_ok=True)
         for name, data in TEST_SAMPLES.items():
-            # Не перезаписываем существующие файлы.
             with (folder / (name + '.txt')).open('xb') as stream:
                 stream.write(data)
         print(f'Создано 8 безопасных образцов: {folder.resolve()}')
@@ -371,7 +337,6 @@ except ImportError as exc:
     sys.exit(1)
 
 
-# Собственные встроенные иконки: внешние файлы не требуются.
 from PySide6 import QtCore
 
 osip_qt_resource_data = b"\
@@ -392,13 +357,13 @@ O\xf1\x8a\x22,L\xe5\x0dO\xf6\xf3\x02\xb75A\xdc\
 \x89\
 PNG\x0d\x0a\x1a\x0a\x00\x00\x00\x0dIHDR\x00\
 \x00\x00\x14\x00\x00\x00\x14\x08\x06\x00\x00\x00\x8d\x89\x1d\x0d\
-\x00\x00\x00XIDATx\x9cc`\x18\x05#\x14\
-\x5cy\xfc\xf5?\xb9\xea\x98p)\x22d(.uL\
+\x00\x00\x00XIDATx\x9cc`\x18\x05#\
+\x14\x5cy\xfc\xf5?\xb9\xea\x98p)\"d(.uL\
 \xd8\x14\x11r)>u(\x06\xea\xc8r3\x92\xa2\x19\
 \x9b>\x0c/\xe33\x94\x90a\x0c\x0c\x0c\x0c\x18\x9a\xf1\
 \xb9\x84\x18\xcb1\x5c\x88O11\xf28\x0d\xc4\xa7\x89\
 \x90e\x04\x01\xb1Ii\x14\x0cR\x00\x00\xc2\xdaAf\
-\xe4>\xe6{\x00\x00\x00\x00IEND\xaeB`\x82\
+\xe4\xe6{\x00\x00\x00\x00IEND\xaeB`\x82\
 \
 \x00\x00\x00\x8d\
 \x89\
@@ -546,7 +511,6 @@ class DeleteWorker(QThread):
             if self.isInterruptionRequested():
                 break
             try:
-                # Простейшая дополнительная защита от удаления запущенного файла.
                 for proc in psutil.process_iter(['exe']):
                     try:
                         if proc.info['exe'] and os.path.normcase(os.path.abspath(proc.info['exe'])) == os.path.normcase(os.path.abspath(finding.path)):
@@ -614,7 +578,6 @@ class MonitorWorker(QThread):
             while not self.isInterruptionRequested():
                 try:
                     path = events.get(timeout=.2)
-                    # Задержка для завершения первичной записи; максимум 2048 путей.
                     if path in pending or len(pending) < 2048:
                         pending[path] = time.monotonic() + self.options['monitor_delay_ms'] / 1000
                     else:
@@ -647,7 +610,6 @@ class MonitorWorker(QThread):
 
 
 def locate_defender():
-    """Только стандартные каталоги Windows, без поиска исполняемого файла в PATH."""
     if not IS_WINDOWS:
         return None
     platform = Path(os.environ.get('ProgramData', r'C:\ProgramData')) / 'Microsoft/Windows Defender/Platform'
@@ -669,7 +631,6 @@ def locate_defender():
 
 
 def verify_microsoft_binary(path):
-    """Проверка Authenticode до запуска. При ошибке проверка завершается безопасно."""
     if not IS_WINDOWS:
         raise OSError('Microsoft Defender доступен только в Windows')
     powershell = Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
@@ -718,7 +679,6 @@ class DefenderWorker(QThread):
                        [self.executable, '-Scan', '-ScanType', '3', '-File', self.folder, '-DisableRemediation'])
             self.data_dir.mkdir(parents=True, exist_ok=True)
             raw_path = self.data_dir / ('defender-' + datetime.now().strftime('%Y%m%d-%H%M%S-%f') + '.log')
-            # Читаем лог отдельным дескриптором: не изменяем позицию записи дочернего процесса.
             with raw_path.open('wb') as output:
                 process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT,
                                            stdin=subprocess.DEVNULL, shell=False,
@@ -742,7 +702,6 @@ class DefenderWorker(QThread):
                                 pending = pending[4096:]
                         if self.isInterruptionRequested() and process.poll() is None:
                             cancelled = True
-                            # -Scan -Cancel документирован только для quick/full, не custom.
                             process.terminate()
                             try:
                                 process.wait(timeout=4)
@@ -784,7 +743,6 @@ class DefenderWorker(QThread):
 
 
 def vector_icon(name, color='#9aa7b8', size=22):
-    """Единый набор векторных иконок, без эмодзи и внешних файлов."""
     pix = QPixmap(size * 2, size * 2)
     pix.setDevicePixelRatio(2)
     pix.fill(Qt.GlobalColor.transparent)
@@ -882,7 +840,6 @@ class CWSWorker(QThread):
                        f"--max-filesize={self.options['cws_max_file_mb']}M",
                        f"--max-scansize={self.options['cws_max_scan_mb']}M",
                        '--follow-dir-symlinks=0', '--follow-file-symlinks=0', folder]
-            # Не запускаем BAT/GUI проекта: они могут завершать процессы и менять файлы.
             if self.isInterruptionRequested(): cancelled = True; return
             self.data_dir.mkdir(parents=True, exist_ok=True)
             raw = self.data_dir / ('cws-' + datetime.now().strftime('%Y%m%d-%H%M%S-%f') + '.log')
@@ -1672,7 +1629,6 @@ class SystemTab(QWidget):
             return
         mode, key_path, value_name = operation
         changed, denied, absent = 0, [], 0
-        # На 64-битной Windows обрабатываем оба представления реестра.
         is_64 = bool(os.environ.get('PROCESSOR_ARCHITEW6432')) or '64' in os.environ.get('PROCESSOR_ARCHITECTURE', '')
         views = [winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY] if is_64 else [0]
         hives = [('HKCU', winreg.HKEY_CURRENT_USER)]
@@ -1703,7 +1659,6 @@ class SystemTab(QWidget):
                         self.backup(hive_name, key_path, name, view, old, value_type)
                         with winreg.CreateKeyEx(hive, key_path, 0,
                             winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE | view) as key:
-                            # Не перезаписывать внешнее изменение между чтением и записью.
                             try:
                                 current, current_type = winreg.QueryValueEx(key, name)
                             except FileNotFoundError:
@@ -1720,7 +1675,6 @@ class SystemTab(QWidget):
                         denied.append(f'{target}: {exc}')
                         self.window.log(denied[-1], 'Ошибка')
         if mode == 'hidden' and changed:
-            # Не перезапускаем Проводник и не завершаем пользовательские процессы.
             try:
                 from ctypes import wintypes
                 send = ctypes.windll.user32.SendMessageTimeoutW
@@ -2059,7 +2013,6 @@ class MainWindow(QMainWindow):
         self.logs.update_stats(checked, threats)
 
     def log(self, text, status='Информация'):
-        # Только GUI-поток: рабочие потоки подключаются через queued-сигналы.
         entry = {'time': datetime.now().astimezone().isoformat(timespec='seconds'),
                  'status': status, 'event': str(text)}
         self.entries.append(entry)
@@ -2149,7 +2102,6 @@ def main():
         QMessageBox.critical(None, 'OSIP-DEFEND', 'Приложение предназначено для Windows 10/11.\n'
                              'Движок можно проверить командой --self-test.')
         return 1
-    # Журнал и реестр не должны одновременно перезаписываться двумя экземплярами.
     from PySide6.QtCore import QLockFile, QStandardPaths
     lock_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation)
     try:
